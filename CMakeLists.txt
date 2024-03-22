@@ -3,7 +3,7 @@ project(blocked_skiplist CXX)
 
 add_compile_options(-O3)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 add_library(blocked_skiplist STATIC blocked_skiplist.hpp blocked_skiplist_node.hpp
         blocked_skiplist.cpp)

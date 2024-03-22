@@ -53,6 +53,8 @@ struct Node {
 
     // Member functions
     explicit Node(uint64_t block_size = 256);
+    Node(const Node& other) requires(std::copyable<K> && std::copyable<V>);
+    Node& operator=(const Node& other) requires(std::copyable<K> && std::copyable<V>);
     ~Node();
 
     std::pair<K, V> min() const;
@@ -63,9 +65,18 @@ struct Node {
     Entry<K, V>* insert(K key, V value);
     Entry<K, V>* insert(Entry<K, V> entry);
     std::optional<std::pair<K, V>> erase(K key);
+    void clear();
     Entry<K, V>* find(K key) const;
     void split_into(Node *other);
 };
+
+template<typename K, typename V>
+void Node<K, V>::clear() {
+    size = 0;
+    m_max_key = 0;
+    std::fill(data, data + capacity, Entry<K, V>());
+    std::fill(forward, forward + SKIP_LIST_LEVELS, nullptr);
+}
 
 template<typename K, typename V>
 Entry<K, V>* Node<K, V>::find(K key) const {
@@ -82,6 +93,36 @@ Node<K, V>::Node(uint64_t block_size): m_max_key{}, size(0), capacity(block_size
     data = (Entry<K, V> *) aligned_alloc(CACHELINE_SIZE, block_size * sizeof(Entry<K, V>));
     std::fill(data, data + capacity, Entry<K, V>());
     std::fill(forward, forward + SKIP_LIST_LEVELS, nullptr);
+}
+
+template<typename K, typename V>
+Node<K, V>::Node(const Node& other) requires(std::copyable<K> && std::copyable<V>) {
+    // copy header
+    m_max_key = other.m_max_key;
+    size = other.size;
+    capacity = other.capacity;
+    prev = other.prev;
+    std::copy(other.forward, other.forward + SKIP_LIST_LEVELS, forward);
+    // copy data
+    data = (Entry<K, V> *) aligned_alloc(CACHELINE_SIZE, other.capacity * sizeof(Entry<K, V>));
+    std::copy(other.data, other.data + other.capacity, data);
+}
+
+template<typename K, typename V>
+Node<K, V>& Node<K, V>::operator=(const Node& other) requires(std::copyable<K> && std::copyable<V>) {
+    if (this != &other) {
+        // copy header
+        m_max_key = other.m_max_key;
+        size = other.size;
+        capacity = other.capacity;
+        prev = other.prev;
+        std::copy(other.forward, other.forward + SKIP_LIST_LEVELS, forward);
+        // copy data
+        free(data);
+        data = (Entry<K, V> *) aligned_alloc(CACHELINE_SIZE, other.capacity * sizeof(Entry<K, V>));
+        std::copy(other.data, other.data + other.capacity, data);
+    }
+    return *this;
 }
 
 template<typename K, typename V>

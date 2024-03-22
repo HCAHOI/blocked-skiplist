@@ -6,6 +6,7 @@
 #include <cassert>
 #include <stdexcept>
 #include <iostream>
+#include <concepts>
 
 #define CACHELINE_SIZE 64
 #define NODE_LOWER_BOUND 0.45
@@ -23,18 +24,22 @@ public:
     explicit BlockedSkipList(size_t block_size);
     ~BlockedSkipList();
 
+    BlockedSkipList(const BlockedSkipList& other) requires(std::copyable<K> && std::copyable<V>);
+    BlockedSkipList& operator=(const BlockedSkipList& other) requires(std::copyable<K> && std::copyable<V>);
+
     [[nodiscard]] size_t size() const;
     [[nodiscard]] bool empty() const;
 
     BlockedSkipListIterator<K, V> begin() const;
     BlockedSkipListIterator<K, V> end() const;
 
+    BlockedSkipListIterator<K, V> find(K key) const;
     BlockedSkipListIterator<K, V> insert(Entry<K, V> entry);
     BlockedSkipListIterator<K, V> insert(K key, V value);
     BlockedSkipListIterator<K, V> update(Entry<K, V> entry);
     BlockedSkipListIterator<K, V> update(K key, V value);
     std::optional<std::pair<K, V>> erase(K key);
-    BlockedSkipListIterator<K, V> find(K key) const;
+    void clear();
     void print() const;
 
     V& operator[](K key);
@@ -135,6 +140,29 @@ BlockedSkipList<K, V>::~BlockedSkipList() {
     }
 }
 
+template<typename K, typename V>
+BlockedSkipList<K, V>::BlockedSkipList(const BlockedSkipList& other) requires(std::copyable<K> && std::copyable<V>) {
+    block_size = other.block_size;
+    head = new Node<K, V>(block_size);
+    m_size = 0;
+    for (auto it = other.begin(); it != other.end(); ++it) {
+        insert(*it);
+    }
+}
+
+template<typename K, typename V>
+BlockedSkipList<K, V>& BlockedSkipList<K, V>::operator=(const BlockedSkipList& other) requires(std::copyable<K> && std::copyable<V>) {
+    if (this != &other) {
+        clear();
+        block_size = other.block_size;
+        head = new Node<K, V>(block_size);
+        m_size = 0;
+        for (auto it = other.begin(); it != other.end(); ++it) {
+            insert(*it);
+        }
+    }
+    return *this;
+}
 
 template<typename K, typename V>
 size_t BlockedSkipList<K, V>::size() const {
@@ -259,6 +287,18 @@ std::optional<std::pair<K, V>> BlockedSkipList<K, V>::erase(K key) {
         m_size -= 1;
     }
     return entry;
+}
+
+template<typename K, typename V>
+void BlockedSkipList<K, V>::clear() {
+    auto cur = head;
+    while (cur != nullptr) {
+        auto next = cur->forward[0];
+        delete cur;
+        cur = next;
+    }
+    head = nullptr;
+    m_size = 0;
 }
 
 template<typename K, typename V>
