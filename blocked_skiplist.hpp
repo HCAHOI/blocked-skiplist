@@ -32,6 +32,8 @@ public:
 
     BlockedSkipListIterator<K, V> begin() const;
     BlockedSkipListIterator<K, V> end() const;
+    BlockedSkipListIterator<K, V> rbegin() const;
+    BlockedSkipListIterator<K, V> rend() const;
 
     BlockedSkipListIterator<K, V> find(K key) const;
     BlockedSkipListIterator<K, V> insert(Entry<K, V> entry);
@@ -40,6 +42,11 @@ public:
     BlockedSkipListIterator<K, V> update(K key, V value);
     std::optional<std::pair<K, V>> erase(K key);
     void clear();
+
+    void merge(BlockedSkipList<K, V>& other);
+    std::pair<BlockedSkipList<K, V>, BlockedSkipList<K, V>> split(K key);
+    std::pair<BlockedSkipList<K, V>, BlockedSkipList<K, V>> split(BlockedSkipListIterator<K, V> iter);
+
     void print() const;
 
     V& operator[](K key);
@@ -65,9 +72,15 @@ template<typename K, typename V>
 struct BlockedSkipListIterator {
     Node<K, V> *node;
     size_t index;
+    bool forward = true;
 
     BlockedSkipListIterator() = default;
     BlockedSkipListIterator(Node<K, V> *node, size_t index): node(node), index(index) {}
+    BlockedSkipListIterator(Node<K, V> *node, size_t index, bool forward): node(node), index(index), forward(forward) {}
+
+    void change_direction() {
+        forward = !forward;
+    }
 
     bool operator==(const BlockedSkipListIterator &other) const {
         return node == other.node && index == other.index;
@@ -79,10 +92,21 @@ struct BlockedSkipListIterator {
 
     BlockedSkipListIterator& operator++() {
         if (node != nullptr) {
-            index += 1;
-            if (index >= node->size) {
-                node = node->forward[0];
-                index = 0;
+            if(forward) {
+                index += 1;
+                if (index >= node->size) {
+                    node = node->forward[0];
+                    index = 0;
+                }
+            } else {
+                if (index == 0) {
+                    node = node->prev;
+                    if (node != nullptr) {
+                        index = node->size - 1;
+                    }
+                } else {
+                    index -= 1;
+                }
             }
         }
         return *this;
@@ -182,6 +206,22 @@ BlockedSkipListIterator<K, V> BlockedSkipList<K, V>::begin() const {
 template<typename K, typename V>
 BlockedSkipListIterator<K, V> BlockedSkipList<K, V>::end() const {
     return BlockedSkipListIterator<K, V>(nullptr, 0);
+}
+
+template<typename K, typename V>
+BlockedSkipListIterator<K, V> BlockedSkipList<K, V>::rbegin() const {
+    auto it = begin();
+    while (it.node->forward[0] != nullptr) {
+        it.node = it.node->forward[0];
+    }
+    it.index = it.node->size - 1;
+    it.change_direction();
+    return it;
+}
+
+template<typename K, typename V>
+BlockedSkipListIterator<K, V> BlockedSkipList<K, V>::rend() const {
+    return BlockedSkipListIterator<K, V>(nullptr, 0, false);
 }
 
 template<typename K, typename V>
@@ -299,6 +339,14 @@ void BlockedSkipList<K, V>::clear() {
     }
     head = nullptr;
     m_size = 0;
+}
+
+template<typename K, typename V>
+void BlockedSkipList<K, V>::merge(BlockedSkipList<K, V>& other) {
+    for (auto it = other.begin(); it != other.end(); ++it) {
+        insert(*it);
+    }
+    other.clear();
 }
 
 template<typename K, typename V>

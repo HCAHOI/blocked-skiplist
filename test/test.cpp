@@ -25,6 +25,5 @@ int main() {
     list2 = list;
     list.print();
     list2.print();
-
     return 0;
 }
