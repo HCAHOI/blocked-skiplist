@@ -21,9 +21,13 @@ struct BlockedSkipList {
 public:
     explicit BlockedSkipList();
     explicit BlockedSkipList(size_t block_size);
+    ~BlockedSkipList();
+
+    [[nodiscard]] size_t size() const;
+    [[nodiscard]] bool empty() const;
 
     BlockedSkipListIterator<K, V> begin() const;
-    static BlockedSkipListIterator<K, V> end();
+    BlockedSkipListIterator<K, V> end() const;
 
     BlockedSkipListIterator<K, V> insert(Entry<K, V> entry);
     BlockedSkipListIterator<K, V> insert(K key, V value);
@@ -43,10 +47,14 @@ private:
     [[nodiscard]] size_t get_random_level() const;
     [[nodiscard]] size_t get_node_lower_bound() const;
 
+    size_t m_size;
     size_t block_size;
     const float p = 0.5;    // probability of a node having a level
     static std::mt19937 level_generator;
 };
+
+template<typename K, typename V>
+std::mt19937 BlockedSkipList<K, V>::level_generator = std::mt19937(std::random_device{}());
 
 template<typename K, typename V>
 struct BlockedSkipListIterator {
@@ -103,7 +111,7 @@ template<typename K, typename V>
 BlockedSkipList<K, V>::BlockedSkipList(): block_size(256) {
     // check if the block_size is the power of 2
     if ((block_size & (block_size - 1)) != 0) {
-        throw std::runtime_error("Block size must be a power of 2");
+        throw std::runtime_error("Block m_size must be a power of 2");
     }
     head = new Node<K, V>(block_size);
 }
@@ -112,13 +120,31 @@ template<typename K, typename V>
 BlockedSkipList<K, V>::BlockedSkipList(size_t block_size): block_size(block_size) {
     // check if the block_size is the power of 2
     if ((block_size & (block_size - 1)) != 0) {
-        throw std::runtime_error("Block size must be a power of 2");
+        throw std::runtime_error("Block m_size must be a power of 2");
     }
     head = new Node<K, V>(block_size);
 }
 
 template<typename K, typename V>
-std::mt19937 BlockedSkipList<K, V>::level_generator = std::mt19937(std::random_device{}());
+BlockedSkipList<K, V>::~BlockedSkipList() {
+    auto cur = head;
+    while (cur != nullptr) {
+        auto next = cur->forward[0];
+        delete cur;
+        cur = next;
+    }
+}
+
+
+template<typename K, typename V>
+size_t BlockedSkipList<K, V>::size() const {
+    return size;
+}
+
+template<typename K, typename V>
+bool BlockedSkipList<K, V>::empty() const {
+    return m_size == 0;
+}
 
 template<typename K, typename V>
 BlockedSkipListIterator<K, V> BlockedSkipList<K, V>::begin() const {
@@ -126,7 +152,7 @@ BlockedSkipListIterator<K, V> BlockedSkipList<K, V>::begin() const {
 }
 
 template<typename K, typename V>
-BlockedSkipListIterator<K, V> BlockedSkipList<K, V>::end() {
+BlockedSkipListIterator<K, V> BlockedSkipList<K, V>::end() const {
     return BlockedSkipListIterator<K, V>(nullptr, 0);
 }
 
@@ -191,6 +217,7 @@ BlockedSkipListIterator<K, V> BlockedSkipList<K, V>::insert(Entry<K, V> entry) {
     } else {
         auto iter = target_node->insert(entry);
         balance_block(target_node);
+        m_size += 1;
         return BlockedSkipListIterator<K, V>(target_node, iter - target_node->data);
     }
 }
@@ -229,6 +256,7 @@ std::optional<std::pair<K, V>> BlockedSkipList<K, V>::erase(K key) {
     auto entry = target_node->erase(key);
     if (entry.has_value()) {
         balance_block(target_node);
+        m_size -= 1;
     }
     return entry;
 }
@@ -283,9 +311,9 @@ void BlockedSkipList<K, V>::balance_block(Node<K, V> *node) {
             merge_node(node);
         } else {
             // Inference:
-            // another->size + node->size > block_size
-            // node->size < get_node_lower_bound() = 0.45 * block_size
-            // another->size > node->size
+            // another->m_size + node->m_size > block_size
+            // node->m_size < get_node_lower_bound() = 0.45 * block_size
+            // another->m_size > node->m_size
 
             auto size_after_balance = (another->size + node->size) / 2;
             auto size_to_move = another->size - size_after_balance;
@@ -295,7 +323,7 @@ void BlockedSkipList<K, V>::balance_block(Node<K, V> *node) {
                 std::copy(another->data, another->data + size_to_move, node->data + node->size);
                 // 2. Move the rest of the elements in `another` to the beginning.
                 std::move(another->data + size_to_move, another->data + another->size, another->data);
-                // 3. Update the size of `node` and `another`.
+                // 3. Update the m_size of `node` and `another`.
                 node->size += size_to_move;
                 another->size -= size_to_move;
                 // 4. Update the max_key
@@ -305,7 +333,7 @@ void BlockedSkipList<K, V>::balance_block(Node<K, V> *node) {
                 std::move_backward(node->data, node->data + node->size, node->data + node->size + size_to_move);
                 // 2. Copy the elements in `another` to `node`.
                 std::copy(another->data + another->size - size_to_move, another->data + another->size, node->data);
-                // 3. Update the size of `node` and `another`.
+                // 3. Update the m_size of `node` and `another`.
                 node->size += size_to_move;
                 another->size -= size_to_move;
                 // 4. Update the max_key
@@ -333,7 +361,7 @@ void BlockedSkipList<K, V>::merge_node(Node<K, V> *node) {
             // merge the last node into the head
             // 1. Move all elements from `node` to `prev_node`.
             std::move(node->data, node->data + node->size, prev_node->data + prev_node->size);
-            // 3. Update the size of `prev_node`.
+            // 3. Update the m_size of `prev_node`.
             prev_node->size += node->size;
             // 4. Update the max_key
             prev_node->m_max_key = prev_node->data[prev_node->size - 1].key;
@@ -343,7 +371,7 @@ void BlockedSkipList<K, V>::merge_node(Node<K, V> *node) {
                 head->forward[l] = nullptr;
             }
 
-            free(node);
+            delete node;
         }
         merge_node(prev_node);
     } else {  // We are dealing with a middle node, we merge it into the smaller neighbour.
@@ -358,13 +386,13 @@ void BlockedSkipList<K, V>::merge_node(Node<K, V> *node) {
             std::move_backward(next_node->data, next_node->data + next_node->size, next_node->data + node->size);
             // 2. Move all elements from `node` to `next_node`.
             std::move(node->data, node->data + node->size, next_node->data);
-            // 3. Update the size of `next_node`.
+            // 3. Update the m_size of `next_node`.
             next_node->size += node->size;
         } else {
             assert(prev_node->size + node->size <= block_size && "The caller ensures this node can be merged.");
             // 1. Move all elements from `node` to `prev_node`.
             std::move(node->data, node->data + node->size, prev_node->data + prev_node->size);
-            // 3. Update the size of `prev_node`.
+            // 3. Update the m_size of `prev_node`.
             prev_node->size += node->size;
             // 4. Update the max_key
             prev_node->m_max_key = prev_node->data[prev_node->size - 1].key;
@@ -379,7 +407,7 @@ void BlockedSkipList<K, V>::merge_node(Node<K, V> *node) {
         }
         next_node->prev = prev_node;
 
-        free(node);
+        delete node;
     }
 }
 
